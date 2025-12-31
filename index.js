@@ -29,7 +29,7 @@ const server = http.createServer(app);
 
 const socketManager = new SocketManager(server);
 
-const PORT = Number(process.env.PORT || process.env.SERVER_PORT || 4001);
+const PORT = Number(process.env.SERVER_PORT || 4001);
 
 server.listen(PORT, () => {
   console.log('Server is running on http://localhost:' + PORT);
