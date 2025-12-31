@@ -3,6 +3,11 @@ import http from 'http';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import SocketManager from './server/SocketManager.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.configDotenv();
 
@@ -11,15 +16,21 @@ const app = express();
 
 app.use(cors());
 
-// Serve static files from the "public" directory
-app.use(express.static('Chess'));
+const chessStaticDir = path.join(__dirname, 'Chess');
+app.use(express.static(chessStaticDir));
+
+// Serve the chess app entry point
+app.get('/', (req, res) => {
+  res.sendFile(path.join(chessStaticDir, 'index.html'));
+});
 
 // Create an HTTP server
 const server = http.createServer(app);
 
 const socketManager = new SocketManager(server);
 
-// Start the server
-server.listen(process.env.SERVER_PORT, () => {
-    console.log('Server is running on http://localhost:' + process.env.SERVER_PORT);
+const PORT = Number(process.env.PORT || process.env.SERVER_PORT || 4001);
+
+server.listen(PORT, () => {
+  console.log('Server is running on http://localhost:' + PORT);
 });
