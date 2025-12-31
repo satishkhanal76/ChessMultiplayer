@@ -1,5 +1,6 @@
 import { Piece } from '../Chess/js/classes/pieces/Piece.js';
 import ClassicalVariant from '../Chess/js/classes/variants/ClassicalVariant.js';
+import TwoQueenVariant from '../Chess/js/classes/variants/TwoQueenVariant.js';
 import Move from '../Chess/js/classes/Move.js';
 import Socket from '../Chess/js/classes/sockets/Socket.js';
 import FileRankFactory from '../Chess/js/classes/FileRankFactory.js';
@@ -15,7 +16,7 @@ export default class RoomGameManager {
 
     #remainingColours;
 
-    constructor(room) {
+    constructor(room, variant) {
         this.#room = room;
         this.#socketAndColourMap = new Map();
 
@@ -23,7 +24,7 @@ export default class RoomGameManager {
 
         this.setSocketColour(this.#room.getRoomCreator(), this.#remainingColours.shift());
         
-        this.createGame();
+        this.createGame(variant);
 
         this.emitGameCreatedEvent(this.#room.getRoomCreator());
 
@@ -88,11 +89,24 @@ export default class RoomGameManager {
     }
 
     createGame(variant = null) {
-        this.#game = new Game(variant || new ClassicalVariant());
+        this.#game = new Game(RoomGameManager.getGameVariantObject(variant));
 
         this.#game.addPlayer(new Player(Piece.COLOUR.WHITE));
         this.#game.addPlayer(new Player(Piece.COLOUR.BLACK));
     }
+
+
+    static getGameVariantObject(variant) {
+        switch(variant) {
+            case "two-queen":
+                return new TwoQueenVariant();
+                break;
+            default:
+                return new ClassicalVariant();
+                break;
+        }
+    }
+    
 
     getRoom() {
         return this.#room;

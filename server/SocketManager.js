@@ -53,11 +53,12 @@ export default class SocketManager {
 
 
         // Create Game Event
-        socket.on(Socket.EVENTS.CREATE_GAME, (roomId) => {
+        socket.on(Socket.EVENTS.CREATE_GAME, (gameData) => {
+            const { roomId, variant } = gameData;
             if (this.#roomGameManagers.has(roomId)) return; // Prevent duplicate creation
             const room = this.#roomsManger.getRoom(roomId);
             if (room) {
-                const roomGameManager = new RoomGameManager(room);
+                const roomGameManager = new RoomGameManager(room, variant);
                 this.#roomGameManagers.set(roomId, roomGameManager);
             }
         });
