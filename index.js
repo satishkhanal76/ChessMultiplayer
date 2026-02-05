@@ -24,6 +24,19 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(chessStaticDir, 'index.html'));
 });
 
+// Project-specific 404 (serve 404.html for page-like requests)
+app.use((req, res) => {
+  const ext = path.extname(req.path);
+  const isHtmlLike = ext === '' || ext === '.html';
+
+  if (isHtmlLike) {
+    return res.status(404).sendFile(path.join(chessStaticDir, '404.html'));
+  }
+
+  // For missing assets (.png/.js/.css/etc.), return a normal 404
+  return res.status(404).end();
+});
+
 // Create an HTTP server
 const server = http.createServer(app);
 
