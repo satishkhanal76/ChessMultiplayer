@@ -31,15 +31,15 @@ export default class Room {
         this.#sockets.set(socket.id, socket);
     }
 
-    removeSocket(id) {
+    removeSocket(id, { preserveRoom = false } = {}) {
         //if it is the creator of the room, destroy the room
-        if(id === this.#roomCreatorSocket.id) {
+        if(id === this.#roomCreatorSocket.id && !preserveRoom) {
             this.sendEventToAllExecpt(this.#roomCreatorSocket, Socket.EVENTS.ROOM_DESTROYED, { message: "Creator left the room!" });
             this.#sockets.clear();
             return;
         }
         this.#sockets.delete(id);
-        this.sendEventToAll(Socket.EVENTS.ROOM_PLAYER_LEFT, { message: "A player left the room!" });
+        this.sendEventToAll(Socket.EVENTS.ROOM_PLAYER_LEFT, { message: "A player left the room." });
     }
 
     /**

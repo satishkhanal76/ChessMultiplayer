@@ -23,7 +23,6 @@ export default class SocketManager {
 
     addConnectionEvents() {
         this.#io.on(Socket.EVENTS.USER_CONNECTION, (socket) => {
-            console.log('A user connected', socket.id);
             this.addSocketEvents(socket);
         });
     }
@@ -31,8 +30,10 @@ export default class SocketManager {
     addSocketEvents(socket) {
         // Socket disconnect Event
         socket.on(Socket.EVENTS.USER_DISCONNECTION, () => {
-            console.log('A user disconnected', socket.id);
-            const destroyedRoomIds = this.#roomsManger.socketDisconnect(socket);
+            const room = this.#roomsManger.getRoomBySocket(socket);
+            const roomGame = room && this.#roomGameManagers.get(room.getRoomId());
+            const preserveForOpponent = roomGame?.handlePlayerDisconnected(socket) || false;
+            const destroyedRoomIds = this.#roomsManger.socketDisconnect(socket, { preserveRoom: preserveForOpponent });
             destroyedRoomIds.forEach((roomId) => this.#roomGameManagers.delete(roomId));
         });
 
@@ -90,6 +91,25 @@ export default class SocketManager {
             if (roomGameManager) {
                 roomGameManager.movePiece(socket, data);
             }
+        });
+
+        socket.on(Socket.EVENTS.CLOCK_PING, (data) => {
+            if (!data || typeof data.roomId !== 'string') return;
+            this.#roomGameManagers.get(data.roomId)?.clockPing(socket, data.clientSentAt);
+        });
+
+        [
+            [Socket.EVENTS.OFFER_DRAW, 'offerDraw'],
+            [Socket.EVENTS.ACCEPT_DRAW, 'acceptDraw'],
+            [Socket.EVENTS.DECLINE_DRAW, 'declineDraw'],
+            [Socket.EVENTS.CLAIM_DRAW, 'claimDraw'],
+            [Socket.EVENTS.RESIGN, 'resign'],
+        ].forEach(([eventName, methodName]) => {
+            socket.on(eventName, (data) => {
+                if (!data || typeof data.roomId !== 'string') return;
+                const roomGame = this.#roomGameManagers.get(data.roomId);
+                if (roomGame) roomGame[methodName](socket);
+            });
         });
     }
 

@@ -43,7 +43,7 @@ export default class RoomsManager {
         return room;
     }
 
-    socketDisconnect(socket) {
+    socketDisconnect(socket, { preserveRoom = false } = {}) {
         const roomId = this.#roomIdBySocket.get(socket.id);
         this.#roomIdBySocket.delete(socket.id);
         if (!roomId) return [];
@@ -51,9 +51,8 @@ export default class RoomsManager {
         const room = this.#rooms.get(roomId);
         if (!room) return [];
 
-        // A creator leaving destroys the room and clears its members.
         const memberSocketIds = [...room.getSockets().keys()];
-        room.removeSocket(socket.id);
+        room.removeSocket(socket.id, { preserveRoom });
         if (room.getRoomSize() !== 0) return [];
 
         this.#rooms.delete(roomId);

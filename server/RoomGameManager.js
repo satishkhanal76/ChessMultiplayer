@@ -19,6 +19,7 @@ export default class RoomGameManager {
     #remainingColours;
     #settings;
     #started = false;
+    #clockSequence = 0;
 
     constructor(room, settings = {}) {
         this.#room = room;
@@ -55,7 +56,15 @@ export default class RoomGameManager {
                 from: event.requestedMove.getFrom(),
                 to: event.requestedMove.getTo(),
                 promotionPieceType: event.requestedMove.getPromotionPieceType(),
-                playerColour: event.player.getColour()
+                playerColour: event.player.getColour(),
+                clock: this.#createClockSnapshot(),
+            });
+        });
+        this.#game.resultEventListeners.addListener((result) => {
+            // Deliver the final move before its checkmate result to remote clients.
+            queueMicrotask(() => {
+                this.#broadcastClock();
+                this.#room.sendEventToAll(Socket.EVENTS.GAME_RESULT, result);
             });
         });
     }
@@ -82,10 +91,13 @@ export default class RoomGameManager {
             promotionPieceType: data.promotionPieceType
         });
        
+        const previousDrawOffer = this.#game.getDrawOffer();
         try {
             this.#game.movePiece(move);
-        }catch(err) {
-            console.log(err);
+            if (previousDrawOffer && !this.#game.getDrawOffer()) {
+                this.#room.sendEventToAll(Socket.EVENTS.DRAW_OFFER_CLEARED, {});
+            }
+        } catch {
             socket.emit(Socket.EVENTS.MOVE_INVALID, {
                 message: "Invalid Move!"
             })
@@ -107,7 +119,109 @@ export default class RoomGameManager {
         if (clock) this.#game.setClock(clock);
         if (clock) this.#game.startClock();
         this.#room.sendEventToAll(Socket.EVENTS.GAME_STARTED, this.#settings);
+        this.#broadcastClock();
         return true;
+    }
+
+    #createClockSnapshot() {
+        const clock = this.#game.getClock();
+        if (!clock) return null;
+        return {
+            ...clock.getState(),
+            serverTimestamp: Date.now(),
+            sequence: ++this.#clockSequence,
+        };
+    }
+
+    #broadcastClock() {
+        const snapshot = this.#createClockSnapshot();
+        if (snapshot) this.#room.sendEventToAll(Socket.EVENTS.CLOCK_SYNC, snapshot);
+    }
+
+    clockPing(socket, clientSentAt) {
+        if (!this.#socketAndColourMap.has(socket.id) ||
+            !this.#room.getSockets().has(socket.id) ||
+            !Number.isFinite(clientSentAt)) return false;
+        socket.emit(Socket.EVENTS.CLOCK_PONG, {
+            clientSentAt,
+            serverTimestamp: Date.now(),
+        });
+        const snapshot = this.#createClockSnapshot();
+        if (snapshot) socket.emit(Socket.EVENTS.CLOCK_SYNC, snapshot);
+        return true;
+    }
+
+    #getPlayerColour(socket) {
+        const colour = this.#socketAndColourMap.get(socket.id);
+        if (!this.#started || !colour || !this.#room.getSockets().has(socket.id)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "This game action is not available right now." });
+            return null;
+        }
+        return colour;
+    }
+
+    offerDraw(socket) {
+        const colour = this.#getPlayerColour(socket);
+        if (!colour) return false;
+        if (!this.#game.offerDraw(colour)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "A draw cannot be offered now." });
+            return false;
+        }
+        this.#room.sendEventToAll(Socket.EVENTS.DRAW_OFFERED, { colour });
+        return true;
+    }
+
+    acceptDraw(socket) {
+        const colour = this.#getPlayerColour(socket);
+        if (!colour) return false;
+        if (!this.#game.acceptDraw(colour)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "There is no opponent draw offer to accept." });
+            return false;
+        }
+        return true;
+    }
+
+    declineDraw(socket) {
+        const colour = this.#getPlayerColour(socket);
+        if (!colour) return false;
+        if (!this.#game.declineDraw(colour)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "There is no opponent draw offer to decline." });
+            return false;
+        }
+        this.#room.sendEventToAll(Socket.EVENTS.DRAW_OFFER_CLEARED, {});
+        return true;
+    }
+
+    claimDraw(socket) {
+        const colour = this.#getPlayerColour(socket);
+        if (!colour) return false;
+        if (!this.#game.claimDraw(colour)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "A draw cannot be claimed in this position." });
+            return false;
+        }
+        return true;
+    }
+
+    resign(socket) {
+        const colour = this.#getPlayerColour(socket);
+        if (!colour) return false;
+        if (!this.#game.resign(colour)) {
+            socket.emit(Socket.EVENTS.GAME_ACTION_REJECTED, { message: "This game can no longer be resigned." });
+            return false;
+        }
+        return true;
+    }
+
+    handlePlayerDisconnected(socket) {
+        const colour = this.#socketAndColourMap.get(socket.id);
+        if (colour && !this.#started) {
+            this.#socketAndColourMap.delete(socket.id);
+            this.#remainingColours.unshift(colour);
+            return false;
+        }
+        const hasOpponent = [...this.#room.getSockets().keys()].some((id) => id !== socket.id);
+        if (!this.#started || !colour || !hasOpponent || this.#game.isOver()) return false;
+        return this.#game.resign(colour, "disconnect");
     }
 
     createGame(variant = null) {
