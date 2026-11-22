@@ -1,11 +1,13 @@
 import { Piece } from '../Chess/js/classes/pieces/Piece.js';
 import ClassicalVariant from '../Chess/js/classes/variants/ClassicalVariant.js';
 import TwoQueenVariant from '../Chess/js/classes/variants/TwoQueenVariant.js';
+import FourOFourVariant from '../Chess/js/classes/variants/FourOFourVariant.js';
 import Move from '../Chess/js/classes/Move.js';
 import Socket from '../Chess/js/classes/sockets/Socket.js';
 import FileRankFactory from '../Chess/js/classes/FileRankFactory.js';
 import { Game } from '../Chess/js/classes/Game.js';
 import { Player } from '../Chess/js/classes/players/Player.js';
+import { createClockForTimeControl } from '../Chess/js/classes/clock/TimeControls.js';
 
 export default class RoomGameManager {
 
@@ -15,16 +17,22 @@ export default class RoomGameManager {
     #socketAndColourMap;
 
     #remainingColours;
+    #settings;
+    #started = false;
 
-    constructor(room, variant) {
+    constructor(room, settings = {}) {
         this.#room = room;
+        this.#settings = {
+            variant: ['classical', 'two-queen', '404-variant'].includes(settings.variant) ? settings.variant : 'classical',
+            timeControl: ['none', '3+2', '5+0', '10+0', '15+10'].includes(settings.timeControl) ? settings.timeControl : 'none',
+        };
         this.#socketAndColourMap = new Map();
 
         this.#remainingColours = [Piece.COLOUR.WHITE, Piece.COLOUR.BLACK];
 
         this.setSocketColour(this.#room.getRoomCreator(), this.#remainingColours.shift());
         
-        this.createGame(variant);
+        this.createGame(this.#settings.variant);
 
         this.emitGameCreatedEvent(this.#room.getRoomCreator());
 
@@ -36,7 +44,8 @@ export default class RoomGameManager {
     emitGameCreatedEvent(socket) {
         socket.emit(Socket.EVENTS.GAME_CREATED, { 
             message: "Game Created",
-            colour: this.#socketAndColourMap.get(socket.id) || null
+            colour: this.#socketAndColourMap.get(socket.id) || null,
+            ...this.#settings,
          });
     }
 
@@ -52,6 +61,10 @@ export default class RoomGameManager {
     }
 
     movePiece(socket, data) {
+        if (!this.#started) {
+            socket.emit(Socket.EVENTS.MOVE_INVALID, { message: "The game has not started yet." });
+            return;
+        }
         const socketColour = this.#socketAndColourMap.get(socket.id);
         const currentPlayerColour = this.#game.getCurrentPlayer().getColour();
 
@@ -82,10 +95,19 @@ export default class RoomGameManager {
 
     newSocketJoinedRoom(socket) {
         const remainingColour = this.#remainingColours.shift();
-        if(remainingColour)
+        if (!remainingColour) return null;
         this.setSocketColour(socket, remainingColour);
-        
-        this.emitGameCreatedEvent(socket);
+        return { colour: remainingColour, ...this.#settings };
+    }
+
+    startWhenReady() {
+        if (this.#started || this.#room.getRoomSize() !== 2) return false;
+        this.#started = true;
+        const clock = createClockForTimeControl(this.#settings.timeControl);
+        if (clock) this.#game.setClock(clock);
+        if (clock) this.#game.startClock();
+        this.#room.sendEventToAll(Socket.EVENTS.GAME_STARTED, this.#settings);
+        return true;
     }
 
     createGame(variant = null) {
@@ -100,6 +122,9 @@ export default class RoomGameManager {
         switch(variant) {
             case "two-queen":
                 return new TwoQueenVariant("two-queen");
+                break;
+            case "404-variant":
+                return new FourOFourVariant("404-variant");
                 break;
             default:
                 return new ClassicalVariant("classical");

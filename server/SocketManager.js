@@ -41,21 +41,38 @@ export default class SocketManager {
 
         // Join Room Event
         socket.on(Socket.EVENTS.JOIN_ROOM, (roomId) => {
-            if (typeof roomId !== 'string' || !this.#roomsManger.joinRoom(socket, roomId)) return;
+            if (typeof roomId !== 'string') return;
+            const room = this.#roomsManger.joinRoom(socket, roomId);
+            if (!room) return;
             const roomGame = this.#roomGameManagers.get(roomId);
-            if(!roomGame) return;
-            roomGame.newSocketJoinedRoom(socket);
+            if (!roomGame) {
+                room.removeSocket(socket.id);
+                socket.emit(Socket.EVENTS.ROOM_NOT_FOUND, { message: "This room is not ready yet. Ask the host to recreate it." });
+                return;
+            }
+            const assignment = roomGame.newSocketJoinedRoom(socket);
+            if (!assignment) {
+                room.removeSocket(socket.id);
+                socket.emit(Socket.EVENTS.ROOM_NOT_FOUND, { message: "This room is already full." });
+                return;
+            }
+            socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, {
+                roomId: room.getRoomId(),
+                isCreator: false,
+                ...assignment,
+            });
+            roomGame.startWhenReady();
         });
 
 
         // Create Game Event
         socket.on(Socket.EVENTS.CREATE_GAME, (gameData) => {
             if (!gameData || typeof gameData !== 'object' || typeof gameData.roomId !== 'string') return;
-            const { roomId, variant } = gameData;
+            const { roomId, variant, timeControl } = gameData;
             if (this.#roomGameManagers.has(roomId)) return; // Prevent duplicate creation
             const room = this.#roomsManger.getRoom(roomId);
-            if (room) {
-                const roomGameManager = new RoomGameManager(room, variant);
+            if (room && room.isRoomCreator(socket)) {
+                const roomGameManager = new RoomGameManager(room, { variant, timeControl });
                 this.#roomGameManagers.set(roomId, roomGameManager);
             }
         });

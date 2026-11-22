@@ -14,14 +14,14 @@ export default class RoomsManager {
         const existingRoomId = this.#roomIdBySocket.get(socket.id);
         const existingRoom = existingRoomId && this.#rooms.get(existingRoomId);
         if (existingRoom) {
-            socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, { roomId: existingRoomId });
+            socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, { roomId: existingRoomId, isCreator: true });
             return existingRoom;
         }
 
         const room = new Room(socket);
         this.#rooms.set(room.getRoomId(), room);
         this.#roomIdBySocket.set(socket.id, room.getRoomId());
-        socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, { roomId: room.getRoomId() });
+        socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, { roomId: room.getRoomId(), isCreator: true });
         return room;
     }
 
@@ -40,8 +40,7 @@ export default class RoomsManager {
 
         room.addSocket(socket);
         this.#roomIdBySocket.set(socket.id, room.getRoomId());
-        socket.emit(Socket.EVENTS.ROOM_JOIN_SUCCESS, { roomId: room.getRoomId() });
-        return true;
+        return room;
     }
 
     socketDisconnect(socket) {
